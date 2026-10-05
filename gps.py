@@ -1,70 +1,93 @@
-'''
-GPS Interfacing with Raspberry Pi using Pyhton
-http://www.electronicwings.com
-'''
-import serial               #import serial pacakge
-from time import sleep
-import webbrowser           #import package for opening link in browser
-import sys                  #import system package
-from firebase import firebase
-import json
+#!/usr/bin/env python3
+"""Read NMEA GPS fixes from a serial device and optionally publish them to Firebase.
 
-def GPS_Info():
-    global NMEA_buff
-    global lat_in_degrees
-    global long_in_degrees
-    nmea_time = []
-    nmea_latitude = []
-    nmea_longitude = []
-    nmea_time = NMEA_buff[0]                    #extract time from GPGGA string
-    nmea_latitude = NMEA_buff[1]                #extract latitude from GPGGA string
-    nmea_longitude = NMEA_buff[3]               #extract longitude from GPGGA string
-    
-    print("NMEA Time: ", nmea_time,'\n')
-    print ("NMEA Latitude:", nmea_latitude,"NMEA Longitude:", nmea_longitude,'\n')
-    
-    lat = float(nmea_latitude)                  #convert string into float for calculation
-    longi = float(nmea_longitude)               #convertr string into float for calculation
-    
-    lat_in_degrees = convert_to_degrees(lat)    #get latitude in degree decimal format
-    long_in_degrees = convert_to_degrees(longi) #get longitude in degree decimal format
-    
-#convert raw NMEA string into degree decimal format   
-def convert_to_degrees(raw_value):
-    decimal_value = raw_value/100.00
-    degrees = int(decimal_value)
-    mm_mmmm = (decimal_value - int(decimal_value))/0.6
-    position = degrees + mm_mmmm
-    position = "%.4f" %(position)
-    return position
-    
+The script supports NMEA GGA sentences from modules such as the NEO-6M. It
+prints each valid fix as decimal latitude/longitude and posts it only when a
+Firebase URL is explicitly supplied. This keeps the module safe to import and
+avoids coupling a checkout to a particular Firebase project.
+"""
+
+import argparse
+from dataclasses import dataclass
+from typing import Optional
+
+import serial
 
 
-gpgga_info = "$GPGGA,"
-ser = serial.Serial ("/dev/ttyS0")              #Open port with baud rate
-GPGGA_buffer = 0
-NMEA_buff = 0
-lat_in_degrees = 0
-long_in_degrees = 0
-firebase=firebase.FirebaseApplication('https://test-2b791.firebaseio.com',None)
-try:
-    while True:
-        received_data = (str)(ser.readline())                   #read NMEA string received
-        GPGGA_data_available = received_data.find(gpgga_info)   #check for NMEA GPGGA string                 
-        if (GPGGA_data_available>0):
-            GPGGA_buffer = received_data.split("$GPGGA,",1)[1]  #store data coming after "$GPGGA," string 
-            NMEA_buff = (GPGGA_buffer.split(','))               #store comma separated data in buffer
-            GPS_Info()                                          #get time, latitude, longitude
- 
-            print("lat in degrees:", lat_in_degrees," long in degree: ", long_in_degrees, '\n')
-            #map_link = 'http://maps.google.com/?q=' + lat_in_degrees + ',' + long_in_degrees    #create link to plot location on Google map
-            print("<<<<<<<<press ctrl+c to plot location on google maps>>>>>>\n")               #press ctrl+c to plot on map and exit 
-            print("------------------------------------------------------------\n")
-            firebase.post('/lati',lat_in_degrees)
-            firebase.post('/long',long_in_degrees)
-            #print(GPGGA_buffer)            
-except KeyboardInterrupt:
-    webbrowser.open(map_link)        #open current position information in google map
-    sys.exit(0)
+@dataclass(frozen=True)
+class GPSFix:
+    """A valid GPS fix represented in decimal degrees."""
+
+    timestamp: str
+    latitude: float
+    longitude: float
 
 
+def nmea_coordinate_to_decimal(value: str, hemisphere: str) -> float:
+    """Convert an NMEA ``ddmm.mmmm``/``dddmm.mmmm`` coordinate to decimal degrees."""
+    if not value or hemisphere not in {"N", "S", "E", "W"}:
+        raise ValueError("missing or invalid NMEA coordinate")
+
+    raw = float(value)
+    degrees = int(raw // 100)
+    decimal = degrees + (raw - degrees * 100) / 60
+    return -decimal if hemisphere in {"S", "W"} else decimal
+
+
+def parse_gga(sentence: str) -> Optional[GPSFix]:
+    """Parse a GGA sentence, returning ``None`` for a missing or invalid fix."""
+    fields = sentence.strip().split(",")
+    if len(fields) < 7 or not fields[0].endswith("GGA"):
+        return None
+
+    # GGA quality 0 means the receiver has no valid fix.
+    if fields[6] == "0" or not fields[2] or not fields[4]:
+        return None
+
+    try:
+        return GPSFix(
+            timestamp=fields[1],
+            latitude=nmea_coordinate_to_decimal(fields[2], fields[3]),
+            longitude=nmea_coordinate_to_decimal(fields[4], fields[5]),
+        )
+    except ValueError:
+        return None
+
+
+def publish_fix(firebase_url: str, fix: GPSFix) -> None:
+    """Publish a location update using the legacy python-firebase client."""
+    from firebase import firebase  # Local parsing does not need Firebase configured.
+
+    client = firebase.FirebaseApplication(firebase_url, None)
+    client.post("/lati", fix.latitude)
+    client.post("/long", fix.longitude)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--port", default="/dev/ttyS0", help="GPS serial device")
+    parser.add_argument("--baudrate", type=int, default=9600, help="GPS serial baud rate")
+    parser.add_argument(
+        "--firebase-url",
+        help="Firebase Realtime Database URL; omit to print fixes without uploading",
+    )
+    args = parser.parse_args()
+
+    with serial.Serial(args.port, args.baudrate, timeout=1) as receiver:
+        print(f"Reading GPS data from {args.port} at {args.baudrate} baud. Press Ctrl-C to stop.")
+        try:
+            while True:
+                sentence = receiver.readline().decode("ascii", errors="replace")
+                fix = parse_gga(sentence)
+                if fix is None:
+                    continue
+
+                print(f"{fix.timestamp}: {fix.latitude:.6f}, {fix.longitude:.6f}")
+                if args.firebase_url:
+                    publish_fix(args.firebase_url, fix)
+        except KeyboardInterrupt:
+            print("\nStopped GPS telemetry.")
+
+
+if __name__ == "__main__":
+    main()

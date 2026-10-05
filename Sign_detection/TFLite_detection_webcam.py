@@ -15,15 +15,12 @@
 
 # Import packages
 import os
-import keyboard
 import argparse
 import cv2
 import numpy as np
-import sys
 import time
 from threading import Thread
 import importlib.util
-import time
 import RPi.GPIO as GPIO       # Import GPIO library
 GPIO.setmode(GPIO.BCM)      # Use board pin numbering
 GPIO.setwarnings(False)

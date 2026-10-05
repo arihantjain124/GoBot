@@ -1,0 +1,16 @@
+# Core perception and Raspberry Pi control
+numpy>=1.21
+opencv-python>=4.5
+RPi.GPIO>=0.7
+
+# TensorFlow Lite runtime
+# On Raspberry Pi, prefer `tflite-runtime` over the full TensorFlow package.
+tflite-runtime>=2.5; platform_machine == "armv7l" or platform_machine == "aarch64"
+
+# Telemetry and monitoring
+pyserial>=3.5
+python-firebase>=1.2
+psutil>=5.9
+
+# Legacy Raspberry Pi camera API used by picam.py
+picamera>=1.13

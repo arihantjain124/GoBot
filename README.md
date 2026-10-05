@@ -34,17 +34,21 @@ Camera → TensorFlow Lite sign detection → GPIO/PWM → motors & steering
 - Python 3, OpenCV, NumPy, TensorFlow or `tflite-runtime`, and `RPi.GPIO`.
 - Optional: GPS module on `/dev/ttyS0`, Firebase project, and Pi4J for the Java control server.
 
-The dependency file under `Sign_detection/` is a historical environment snapshot. For a new setup, install only the libraries required for the component you plan to run rather than the entire list.
+The original prototype used a Raspberry Pi 3B+, a NEO-6M GPS receiver, HMC5883L compass, USB camera, DC motors, and L293D motor drivers. The GPIO assignments in this repository are vehicle-specific, so verify them before powering the drivetrain.
+
+The curated dependency list lives at the repository root. The TensorFlow Lite runtime is selected automatically on common Raspberry Pi architectures; for desktop development, install TensorFlow separately if you want to run inference.
 
 ## Quick start
 
 > **Safety first:** keep the rover off the ground or disconnect its motor power while testing GPIO or perception code. Review every GPIO pin and PWM value before connecting hardware.
 
 ```bash
+# From the repository root, install the runtime dependencies.
+python3 -m pip install -r requirements.txt
+
 # Sign detection / camera control
-cd Sign_detection
-python3 TFLite_detection_webcam.py \
-  --modeldir Sample_TFLite_model \
+python3 Sign_detection/TFLite_detection_webcam.py \
+  --modeldir Sign_detection/Sample_TFLite_model \
   --graph model.tflite \
   --labels dict.txt
 
@@ -59,12 +63,14 @@ python3 Monitoring/monitoring.py
 ## Configuration notes
 
 - Update GPIO pins, PWM duty cycles, and detection-index logic in `TFLite_detection_webcam.py` for the vehicle’s wiring and label order.
-- Configure the serial device and Firebase endpoint in `gps.py` before enabling telemetry.
+- Run `python3 gps.py --help` to configure the serial device. Add `--firebase-url <database-url>` only when you want to publish location updates.
 - `RCServer.java` listens on TCP port `4141`; it expects joystick/control values from a compatible client and requires Pi4J on the Pi.
 
 ## Status
 
 This repository captures an early robotics prototype and its experiments. It is useful as a reference for the system architecture, but it has not been packaged or validated as a production deployment.
+
+The accompanying project report also describes an Android control application, Google Maps, and Firebase integration. Android source is not included in this repository; the checked-in code covers the Raspberry Pi, perception, telemetry, and monitoring pieces.
 
 ## Reference material
 

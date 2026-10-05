@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Java and native build outputs
+*.class
+*.o
+*.so
+
+# IDE and operating-system files
+.idea/
+.vscode/
+.DS_Store
+
+# Local configuration and telemetry data
+.env
+*.log
